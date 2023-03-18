@@ -1,3 +1,5 @@
+#include <MIDI.h>
+
 uint8_t pinA = 2;
 uint8_t pinB = 3;
 uint8_t dataPin = 4;
@@ -29,6 +31,8 @@ int aVal;
 bool systemState = false;
 bool editButtonState = false;
 uint8_t tempVal;
+uint8_t fieldModula = 8;
+MIDI_CREATE_DEFAULT_INSTANCE();
 
 
 int charsArray[10]={0b11111100,0b01100000,0b11011010,0b11110010,0b01100110,0b10110110,0b10111110,0b11100000,0b11111110,0b11110110}; // digits as 7 segment
@@ -49,7 +53,8 @@ void initPins(){
 }
 
 void setup() {
-  Serial.begin(9600);
+  MIDI.begin();
+  Serial.begin(115200);
   initPins();
 }
 void loop() {
@@ -72,8 +77,7 @@ void loop() {
 void readButtons(){
   bool val = digitalRead(editPin);
   if(!val && editButtonState){
-    midiValues[selectedSwitch][letter] += encoderModifier;
-    encoderModifier = 0;
+    saveEncoderChange();
     sevenSegOff();
     systemState = !systemState;
   }
@@ -83,9 +87,11 @@ void readButtons(){
   if(!systemState){                                           // if in play mode fields cannot be changed
     val = digitalRead(fieldPin);
     if(val && !encoderButtonState){                           // read Field Changing Button on the encoder
-      midiValues[selectedSwitch][letter] += encoderModifier;  // fetches the specific switch&field value
+      saveEncoderChange();
+      if(letter==0){fieldModula = 8;}
+      if(letter==1){fieldModula = 16;}
+      if(letter==2){fieldModula = 128;}
       letter = (letter+1)%3;                                  // iterates to the next letter thus the next field
-      encoderModifier = 0;                                    // resets the modifier by the encoder
     }
     encoderButtonState = val;                                 // sets the button state to detect if the state of the switch is changed   
   }
@@ -93,9 +99,9 @@ void readButtons(){
   for(int i=0 ; i<4 ; ++i ){ //read all 4 switches
     val = digitalRead(switchPins[i]);
     if(switchStates[i] != val){                                 // detects if the state of the switch is changed
+      midiAction();
       if(!systemState){                                         // if in edit mode switches are used to choose which switch to edit
-        midiValues[selectedSwitch][letter] += encoderModifier;  // fetches the specific switch&field value
-        encoderModifier = 0;                                    // resets the modifier by the encoder
+        saveEncoderChange();                                    // resets the modifier by the encoder
       }
       selectedSwitch = i;                                       // updates the selected switch for other functions
       for(int i=0 ; i<4 ; ++i ){                                // switches LEDs on and of regarding the selected LED
