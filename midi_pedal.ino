@@ -14,7 +14,7 @@ uint8_t switchPin1 = A3;
 uint8_t switchPin2 = A4;
 uint8_t switchPin3 = A5;
 
-uint8_t volatile encoderModifier = 0;
+uint8_t encoderModifier = 0;
 uint8_t midiValues[4][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
 
 uint8_t switchPins[4] = {switchPin0,switchPin1,switchPin2,switchPin3};
@@ -23,12 +23,16 @@ uint8_t switchStates[4];
 uint8_t selectedSwitch = 0;
 
 uint8_t letter = 0;
-bool encoderState = true;
+bool encoderButtonState = true;
+bool encoderRotaryState = true;
 int aVal;
+bool systemState = false;
+bool editButtonState = false;
+uint8_t tempVal;
 
 
-int digitsArray[10]={0b11111100,0b01100000,0b11011010,0b11110010,0b01100110,0b10110110,0b10111110,0b11100000,0b11111110,0b11110110};
-int lettersArray[3]={0b00011110,0b00011010,0b01111010};
+int charsArray[10]={0b11111100,0b01100000,0b11011010,0b11110010,0b01100110,0b10110110,0b10111110,0b11100000,0b11111110,0b11110110}; // digits as 7 segment
+int lettersArray[3]={0b00011110,0b00011010,0b01111010}; // "t","c","d"
 
 void initPins(){
   pinMode (pinA,INPUT);
@@ -47,56 +51,57 @@ void initPins(){
 void setup() {
   Serial.begin(9600);
   initPins();
-  attachInterrupt(digitalPinToInterrupt(pinA), pinA_ISR, RISING);
 }
 void loop() {
-    uint8_t tempVal = midiValues[selectedSwitch][letter]+encoderModifier;    
-    writeDigit(0, lettersArray[letter]);
+    tempVal = midiValues[selectedSwitch][letter]+encoderModifier;    
+    if(!systemState){writeDigit(0, lettersArray[letter]);}
     readButtons();
-    writeDigit(1, digitsArray[(tempVal/100)%10]);
+    rotaryCheck();
+    if(!systemState){writeDigit(1, charsArray[(tempVal/100)%10]);}
     readButtons();
-    writeDigit(2, digitsArray[(tempVal/10)%10]);
+    rotaryCheck();
+    if(!systemState){writeDigit(2, charsArray[(tempVal/10)%10]);}
     readButtons();
-    writeDigit(3, digitsArray[tempVal%10]);
+    rotaryCheck();
+    if(!systemState){writeDigit(3, charsArray[tempVal%10]);}
     readButtons();
-}
-
-void writeDigit(int digitNo, int digitValue){
-    digitalWrite(latchPin, LOW);
-    shiftOutLSB_4(15-pow(2,(3-digitNo)));
-    shiftOutLSB_8(digitValue);
-    digitalWrite(latchPin, HIGH);
+    rotaryCheck();
+    //Serial.println(millis());
 }
 
 void readButtons(){
-  bool val = digitalRead(fieldPin);
-  if(val && !encoderState){ // read field Button
+  bool val = digitalRead(editPin);
+  if(!val && editButtonState){
     midiValues[selectedSwitch][letter] += encoderModifier;
-    letter = (letter+1)%3;
     encoderModifier = 0;
+    sevenSegOff();
+    systemState = !systemState;
   }
-  encoderState = val;
+  editButtonState = val; 
+
+
+  if(!systemState){                                           // if in play mode fields cannot be changed
+    val = digitalRead(fieldPin);
+    if(val && !encoderButtonState){                           // read Field Changing Button on the encoder
+      midiValues[selectedSwitch][letter] += encoderModifier;  // fetches the specific switch&field value
+      letter = (letter+1)%3;                                  // iterates to the next letter thus the next field
+      encoderModifier = 0;                                    // resets the modifier by the encoder
+    }
+    encoderButtonState = val;                                 // sets the button state to detect if the state of the switch is changed   
+  }
 
   for(int i=0 ; i<4 ; ++i ){ //read all 4 switches
     val = digitalRead(switchPins[i]);
-    if(switchStates[i] != val){
-      midiValues[selectedSwitch][letter] += encoderModifier;
-      encoderModifier = 0;
-      selectedSwitch = i;
-      for(int i=0 ; i<4 ; ++i ){
-        digitalWrite(LEDPins[i], selectedSwitch==i);
-        if(selectedSwitch==i){Serial.println(LEDPins[i]);}
+    if(switchStates[i] != val){                                 // detects if the state of the switch is changed
+      if(!systemState){                                         // if in edit mode switches are used to choose which switch to edit
+        midiValues[selectedSwitch][letter] += encoderModifier;  // fetches the specific switch&field value
+        encoderModifier = 0;                                    // resets the modifier by the encoder
       }
-      switchStates[i] = val;
+      selectedSwitch = i;                                       // updates the selected switch for other functions
+      for(int i=0 ; i<4 ; ++i ){                                // switches LEDs on and of regarding the selected LED
+        digitalWrite(LEDPins[i], selectedSwitch==i);  
+      }
+      switchStates[i] = val;                                    // saves the new state to detect any further changes
     }
-  }
-}
-
-void pinA_ISR(){
-  if (digitalRead(pinB)) {
-    encoderModifier++;
-  }
-  else {
-    encoderModifier--;
   }
 }
